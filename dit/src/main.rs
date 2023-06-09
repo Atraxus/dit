@@ -1,5 +1,5 @@
 use clap::Parser;
-use dit_cli::*;
+use dit::*;
 
 #[tokio::main]
 async fn main() {

@@ -2,6 +2,7 @@
 #![warn(missing_debug_implementations)]
 
 use clap::{Parser, Subcommand};
+use dit_core::peer::{Config, DhtAndSocketAddr};
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 
 #[derive(Debug, Parser)]
@@ -19,8 +20,16 @@ pub enum Command {
 pub async fn run(args: Args) {
     match args.command {
         Command::Daemon => {
-            dit_core::peer::
-        },
+            // let config = Config {
+            //     addr: DhtAndSocketAddr {
+            //         dht_addr: todo!(),
+            //         socket_addr: todo!(),
+            //     },
+            //     ttl: todo!(),
+            //     query_queue_size: todo!(),
+            // }
+            // dit_core::peer::LocalPeer::new(config)
+        }
     }
 }
 
