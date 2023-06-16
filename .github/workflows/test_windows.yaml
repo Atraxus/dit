@@ -13,35 +13,36 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v2
+      - name: Checkout code
+        uses: actions/checkout@v2
 
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: ${{ matrix.rust }}
-        override: true
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          override: true
+          components: rustfmt, clippy
 
-    - name: Build
-      run: |
-        $env:DIT_LOG="trace"
-        cargo build
-        cargo build --release
+      - name: Build
+        run: |
+          $env:DIT_LOG="trace"
+          cargo build
+          cargo build --release
 
-    - name: Test
-      run: |
-        $env:DIT_LOG="trace"
-        cargo test
-        cargo test --release
+      - name: Test
+        run: |
+          $env:DIT_LOG="trace"
+          cargo test
+          cargo test --release
 
-    # - name: Run Clippy
-    #   uses: actions-rs/clippy-check@v1
-    #   with:
-    #     token: ${{ secrets.GITHUB_TOKEN }}
-    #     args: -- -D warnings
+      - name: Run Clippy
+        uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: -- -D warnings
 
-    - name: Check Formatting
-      uses: actions-rs/cargo@v1
-      with:
-        command: fmt
-        args: -- --check
+      - name: Check Formatting
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: -- --check
