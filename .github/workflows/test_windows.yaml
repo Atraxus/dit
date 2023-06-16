@@ -36,10 +36,7 @@ jobs:
           cargo test --release
 
       - name: Run Clippy
-        uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: -- -D warnings
+        run: cargo clippy -- -D warnings
 
       - name: Check Formatting
         uses: actions-rs/cargo@v1
