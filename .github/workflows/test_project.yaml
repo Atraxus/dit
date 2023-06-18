@@ -10,7 +10,6 @@ jobs:
           - stable
           - nightly
         os:
-          - ubuntu-latest
           - windows-latest
 
     runs-on: ${{ matrix.os }}
