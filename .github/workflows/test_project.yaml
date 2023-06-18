@@ -22,8 +22,8 @@ jobs:
       - name: Install Rust Packages
         shell: cmd
         run: |
+          rustup toolchain install ${{ matrix.rust }} --profile minimal --component clippy rustfmt
           rustup default %{{ matrix.rust }}
-          rustup component add rustfmt clippy
 
       - name: Build
         run: |
