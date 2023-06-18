@@ -36,7 +36,7 @@ jobs:
           cargo test --release
 
       - name: Run Clippy
-        run: cargo clippy -- -A warnings
+        run: cargo clippy
 
       - name: Check Formatting
         run: cargo fmt -- --check
