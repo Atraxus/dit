@@ -1,0 +1,34 @@
+name: Rust Documentation CI
+
+on:
+  push:
+    branches:
+      - main    # Change this to the default branch of your repository
+  pull_request:
+    branches:
+      - main    # Change this to the default branch of your repository
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Build and Generate Docs
+        run: |
+          cargo doc --no-deps
+          cp -r target/doc ${{ github.workspace }}
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./doc
+
