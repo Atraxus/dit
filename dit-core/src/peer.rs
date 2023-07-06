@@ -10,7 +10,7 @@ use tokio_util::codec::Framed;
 pub use types::{DhtAddr, DhtAndSocketAddr, SocketAddr};
 
 use futures_util::{SinkExt, StreamExt};
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use std::collections::hash_map::{Entry, HashMap};
 use std::error::Error;
 use std::fmt;
@@ -20,9 +20,6 @@ use std::sync::Arc;
 use tokio::io;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, oneshot, watch};
-
-
-
 
 use self::proto::{Codec, Payload, PayloadKind};
 
@@ -235,14 +232,12 @@ impl LocalPeer {
     }
 
     fn process_unsubscribe(&mut self, id: SubscriptionId) {
-        let Some((_, dht_addr, payload_kind)) = self
-            .subscriptions_by_id
-            .remove(&id)
-        else {
+        let Some((_, dht_addr, payload_kind)) = self.subscriptions_by_id.remove(&id) else {
             return;
         };
 
-        let Entry::Occupied(mut entry) = self.subscriptions_by_kind.entry((dht_addr, payload_kind)) else {
+        let Entry::Occupied(mut entry) = self.subscriptions_by_kind.entry((dht_addr, payload_kind))
+        else {
             panic!("missing subscription entry for unsubscribe");
         };
 
@@ -454,7 +449,6 @@ impl Listener {
     }
 }
 
-
 #[derive(Clone)]
 pub struct Hashed {
     tree_id: String,
@@ -469,82 +463,52 @@ pub struct FileDir {
 }
 
 pub struct Store {
-    file_dir: FileDir,
-    opened_path: String,
-    hashed: Hashed,
+    /// Location of the store.
+    dir: PathBuf,
 }
 
 impl Store {
     pub fn open(dir: impl AsRef<Path>) -> Self {
-        let mut file_dir = FileDir {
-            //Use std::env::home_dir for determining home directory 
-            dit_path: "$HOME/share/dit".to_string(),
-            store_config: "$HOME/share/dit/config.toml".to_string(),
-            config_content: "".to_string(),
-            file_path: "".to_string().into(),
-        };
-
-        let mut hashed = Hashed {
-            tree_id: "".to_string(),
-            file_hash: "".to_string(),
-        }; 
-
-        //Initialize hasher
-        let mut hasher = Sha256::new();
-
-    //Opening filepath and ditpath    
-        file_dir.file_path = dir.as_ref().to_path_buf();
-
-        //Reading Store config
-        file_dir.config_content = fs::read_to_string(file_dir.store_config.clone()).unwrap();
-        //TODO: Evaluating config parameters
-
-        //Check if tree_id already exists
-        let tree_name = file_dir.file_path.file_name().unwrap().to_str().unwrap().to_string();
-        hasher.update(tree_name.as_bytes());
-        hashed.tree_id = hex::encode(hasher.finalize());
-
-
-       let opened_path = file_dir.dit_path.clone() + &hashed.tree_id;
-        //TODO: Check if folder already exists - otherwise, create a new folder
-
-        Self{
-            opened_path: opened_path,
-            file_dir: file_dir,
-            hashed: hashed,
+        Self {
+            dir: dir.as_ref().to_owned(),
         }
     }
-    
-    /// Copies a file into the store without notifiying peers.
+
+    /// Copies a file into the store without notifying peers.
     pub fn add_file(&mut self, path: impl AsRef<Path>) -> io::Result<Hashed> {
-        let path=path.as_ref();
-        let file = fs::File::open(path)?;
-        let mut file_name = path.file_name().unwrap().to_str().unwrap();
+        use std::io::Read;
 
-        //Determine hash for file name
-        let mut hasher = Sha256::new();
-        hasher.update(file_name.as_bytes());
-        self.hashed.file_hash = hex::encode(hasher.finalize());
+        let mut file = fs::File::open(path)?;
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf)?;
+        let hash = DhtAddr::hash(&buf);
 
-        let mut opened_path= PathBuf::from(&self.opened_path);
-        opened_path.push(self.hashed.file_hash.clone());
-        fs::copy(&path, &opened_path)?;
-
-        return Ok(self.hashed.clone());
-    }
-    
-    pub fn add_data(path: &[u8]) -> io::Result<Hashed> {
+        let mut dir = self.dir.clone();
+        dir.push("blobs");
+        dir.push(hash.to_string());
         todo!()
-        //Adding data to existing files?
+        // let path=path.as_ref();
+        // let file = fs::File::open(path)?;
+        // let mut file_name = path.file_name().unwrap().to_str().unwrap();
+
+        // //Determine hash for file name
+        // let mut hasher = Sha256::new();
+        // hasher.update(file_name.as_bytes());
+        // self.hashed.file_hash = hex::encode(hasher.finalize());
+
+        // let mut opened_path= PathBuf::from(&self.opened_path);
+        // opened_path.push(self.hashed.file_hash.clone());
+        // fs::copy(&path, &opened_path)?;
+
+        // return Ok(self.hashed.clone());
     }
 
     /// Deletes a file from the store.
-    pub fn remove(file_hash: Hashed) -> io::Result<()> {
+    pub fn remove(file_hash: DhtAddr) -> io::Result<()> {
         todo!()
         //Search for the file with a specific hash
     }
 }
-
 
 #[derive(Debug)]
 pub struct RemotePeer {

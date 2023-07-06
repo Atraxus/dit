@@ -1,3 +1,4 @@
+use std::io::Read;
 pub use std::net::SocketAddr;
 
 use rand::Rng;
@@ -17,7 +18,7 @@ impl DhtAddr {
         Self(rand::thread_rng().gen())
     }
 
-    pub fn hash(data: &[u8]) -> Self {
+    pub fn hash(data: impl Read) -> Self {
         let mut hasher = Sha256::new();
         hasher.update(data);
         Self(hasher.finalize().into())
