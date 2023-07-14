@@ -18,3 +18,4 @@ tracing = "0.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util", "io-util"] }
+tempfile = "3"
