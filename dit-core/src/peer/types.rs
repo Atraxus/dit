@@ -2,7 +2,9 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use std::fmt;
+use std::{fmt, io};
+use std::fs::File;
+use std::io::{BufRead, BufReader, Read};
 use std::str::FromStr;
 
 pub use std::net::SocketAddr;
@@ -38,10 +40,26 @@ impl DhtAddr {
         Self(rand::thread_rng().gen())
     }
 
-    pub fn hash(data: &[u8]) -> Self {
+    /// Creating hash value from string, passing to buffer_hash method
+    pub fn hash(data: impl AsRef<str>) -> io::Result<Self> {
+        DhtAddr::buffer_hash(data.as_ref().as_bytes())
+    }
+
+    /// Creating SHA256 hash for local dit files with buffer slicing
+    pub fn buffer_hash (file: impl Read) -> io::Result<Self> {
+        const BUFFER_SIZE: usize = 512;
+        let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
         let mut hasher = Sha256::new();
-        hasher.update(data);
-        Self(hasher.finalize().into())
+        loop {
+            let mut buffer = reader.fill_buf()?;
+            hasher.update(buffer);
+            let length = buffer.len();
+            if buffer.is_empty() {
+                break;
+            }
+            reader.consume(length);
+        }
+        Ok(Self(hasher.finalize().into()))
     }
 
     pub fn is_zero(&self) -> bool {
