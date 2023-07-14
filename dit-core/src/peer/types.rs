@@ -225,7 +225,7 @@ mod tests {
 
     #[test]
     fn dht_addr_hash() {
-        let addr = DhtAddr::hash(b"hello");
+        let addr = DhtAddr::buffer_hash(&b"hello"[..]).unwrap();
         assert_eq!(
             format!("{addr}"),
             "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
