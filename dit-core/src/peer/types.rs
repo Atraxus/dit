@@ -4,6 +4,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
+use std::io::{self, BufRead, BufReader, Read};
 use std::str::FromStr;
 
 pub use std::net::SocketAddr;
@@ -40,10 +41,28 @@ impl DhtAddr {
         Self(rand::thread_rng().gen())
     }
 
-    pub fn hash(data: &[u8]) -> Self {
+    /// Creates a `DhtAddr` by hashing an in-memory buffer.
+    pub fn hash(data: impl AsRef<[u8]>) -> Self {
         let mut hasher = Sha256::new();
-        hasher.update(data);
+        hasher.update(data.as_ref());
         Self(hasher.finalize().into())
+    }
+
+    /// Creates a `DhtAddr` by hashing a stream of data.
+    pub fn hash_reader(file: impl Read) -> io::Result<Self> {
+        const BUFFER_SIZE: usize = 512;
+        let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
+        let mut hasher = Sha256::new();
+        loop {
+            let buffer = reader.fill_buf()?;
+            hasher.update(buffer);
+            if buffer.is_empty() {
+                break;
+            }
+            let length = buffer.len();
+            reader.consume(length);
+        }
+        Ok(Self(hasher.finalize().into()))
     }
 
     pub fn is_zero(&self) -> bool {
@@ -282,10 +301,31 @@ mod tests {
 
     #[test]
     fn dht_addr_hash() {
-        let addr = DhtAddr::hash(b"hello");
+        let addr = DhtAddr::hash("hello");
         assert_eq!(
             format!("{addr}"),
             "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+        );
+    }
+
+    #[test]
+    fn dht_addr_hash_stream() {
+        struct Reader(u8);
+        impl Read for Reader {
+            fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+                if self.0 < 8 {
+                    buf[0] = self.0;
+                    self.0 += 1;
+                    Ok(1)
+                } else {
+                    Ok(0)
+                }
+            }
+        }
+
+        assert_eq!(
+            DhtAddr::hash_reader(Reader(0)).unwrap(),
+            DhtAddr::hash([0, 1, 2, 3, 4, 5, 6, 7]),
         );
     }
 
