@@ -1,18 +1,20 @@
 use rand::Rng;
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+use std::error::Error;
 use std::fmt;
 use std::str::FromStr;
 
 pub use std::net::SocketAddr;
 
 /// This address uniquely identifies peers and data stored on the distributed hash table.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct DhtAddr(pub [u8; Self::BYTE_LEN]);
 
 impl DhtAddr {
     pub const BYTE_LEN: usize = 32;
+    pub const STR_LEN: usize = 2 * Self::BYTE_LEN;
     pub const BITS: usize = 8 * Self::BYTE_LEN;
 
     /// Returns a `DhtAddr` with all bits set to zero.
@@ -114,8 +116,8 @@ impl FromStr for DhtAddr {
     type Err = ParseDhtAddrError;
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
-        if input.len() != 2 * Self::BYTE_LEN {
-            return Err(ParseDhtAddrError(()));
+        if input.len() != Self::STR_LEN {
+            return Err(ParseDhtAddrError::InvalidLength(input.len()));
         }
 
         let mut output = [0; Self::BYTE_LEN];
@@ -124,13 +126,21 @@ impl FromStr for DhtAddr {
                 c @ b'0'..=b'9' => c - b'0',
                 c @ b'A'..=b'F' => c - (b'A' - 10),
                 c @ b'a'..=b'f' => c - (b'a' - 10),
-                _ => return Err(ParseDhtAddrError(())),
+                _ => {
+                    return Err(ParseDhtAddrError::InvalidChar(
+                        input[index..].chars().next().unwrap(),
+                    ))
+                }
             };
             let low = match tuple[1] {
                 c @ b'0'..=b'9' => c - b'0',
                 c @ b'A'..=b'F' => c - (b'A' - 10),
                 c @ b'a'..=b'f' => c - (b'a' - 10),
-                _ => return Err(ParseDhtAddrError(())),
+                _ => {
+                    return Err(ParseDhtAddrError::InvalidChar(
+                        input[index..].chars().next().unwrap(),
+                    ))
+                }
             };
             output[index] = (high << 4) | low
         }
@@ -139,8 +149,73 @@ impl FromStr for DhtAddr {
     }
 }
 
+impl Serialize for DhtAddr {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if serializer.is_human_readable() {
+            serializer.collect_str(self)
+        } else {
+            self.0.serialize(serializer)
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for DhtAddr {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            deserializer.deserialize_str(DhtAddrFromStrVisitor)
+        } else {
+            <[u8; Self::BYTE_LEN]>::deserialize(deserializer).map(DhtAddr)
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DhtAddrFromStrVisitor;
+
+impl<'de> de::Visitor<'de> for DhtAddrFromStrVisitor {
+    type Value = DhtAddr;
+
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("DhtAddr")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        v.parse().map_err(de::Error::custom)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ParseDhtAddrError(());
+pub enum ParseDhtAddrError {
+    InvalidLength(usize),
+    InvalidChar(char),
+}
+
+impl fmt::Display for ParseDhtAddrError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ParseDhtAddrError::InvalidLength(length) => write!(
+                f,
+                "invalid length for DhtAddr, expected {}, got {length}",
+                DhtAddr::STR_LEN,
+            ),
+            ParseDhtAddrError::InvalidChar(ch) => write!(
+                f,
+                "invalid char for DhtAddr, expected hex digit, found {ch}",
+            ),
+        }
+    }
+}
+
+impl Error for ParseDhtAddrError {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DhtAndSocketAddr {
