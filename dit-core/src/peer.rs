@@ -22,11 +22,10 @@ pub use self::types::{DhtAddr, DhtAndSocketAddr};
 
 type FramedStream = Framed<TcpStream, Codec<Packet>>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PeerConfig {
     pub addrs: DhtAndSocketAddr,
     pub ttl: u32,
-    pub query_queue_size: usize,
     pub max_packet_length: u32,
 }
 
@@ -39,9 +38,13 @@ pub struct Runtime {
 
 impl Runtime {
     pub async fn new(config: PeerConfig) -> io::Result<Self> {
+        assert!(
+            !config.addrs.socket_addr.ip().is_unspecified(),
+            "listener address must be specified",
+        );
         let tcp_listener = TcpListener::bind(config.addrs.socket_addr).await?;
 
-        let (query_sender, query_receiver) = mpsc::channel(config.query_queue_size);
+        let (query_sender, query_receiver) = mpsc::channel(1);
         let (event_sender, event_receiver) = mpsc::unbounded_channel();
         let (shutdown_sender, shutdown_receiver) = watch::channel(false);
 

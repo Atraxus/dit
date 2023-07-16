@@ -1,0 +1,24 @@
+[peer]
+# Your peer will will listen for connections from other peers on this address.
+# This needs to be a *public address* and accessible via the internet.
+listener = "0.0.0.0:7700"
+
+# Can be used to set an explicit DHT address for the local peer. By default,
+# the address is chosen randomly and this value should not be set for normal use.
+#dht_addr = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+# How many times a packet is forwarded on the peer-to-peer network before it is discarded.
+#ttl = 16
+
+# The maximum size of a peer-to-peer packet. Larger packets are discarded.
+#max_packet_length = 1024
+
+[daemon]
+# Connections to this socket have full control of dit. As such, it should be set to a
+# private address.
+#listener = "127.0.0.1:7701"
+
+[store]
+# Location of the dit store. By default, "$CONFIG_DIR/store" is used, where $CONFIG_DIR is
+# the location of the config file.
+#dir = "/path/to/store"
