@@ -4,7 +4,7 @@
 //! manage the remote peers that connect to the listener.
 
 use crate::codec::Codec;
-use crate::peer::PeerConfig;
+use crate::peer::{Controller, PeerConfig};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
@@ -27,12 +27,14 @@ pub struct DaemonConfig {
 pub enum Packet {
     Ping(u64),
     Pong(u64),
+    Bootstrap(SocketAddr),
 }
 
 /// This struct represents the connection from the daemon to a process.
 #[derive(Debug)]
 pub struct ConnectionToProcess {
     stream: Framed<TcpStream, Codec<Packet>>,
+    controller: Controller,
 }
 
 impl ConnectionToProcess {
@@ -49,6 +51,12 @@ impl ConnectionToProcess {
 
                     // Respond with Pong
                     self.stream.send(Packet::Pong(value)).await?;
+                }
+                Ok(Packet::Bootstrap(address)) => {
+                    tracing::info!("Received Bootstrap with address: {}", address);
+
+                    // Bootstrap the local peer
+                    self.controller.bootstrap(address).await?;
                 }
                 Ok(Packet::Pong(_)) => {
                     tracing::warn!("Received unexpected Pong packet");
@@ -92,6 +100,10 @@ impl ConnectionToDaemon {
             None => Ok(None),
         }
     }
+
+    pub async fn bootstrap(&mut self, address: SocketAddr) -> tokio::io::Result<()> {
+        self.stream.send(Packet::Bootstrap(address)).await
+    }
 }
 
 /// The local listener listens for connections from processes.
@@ -101,10 +113,14 @@ pub struct LocalListener {
 }
 
 impl LocalListener {
-    pub async fn accept(&mut self) -> io::Result<Option<ConnectionToProcess>> {
+    pub async fn accept(
+        &mut self,
+        controller: Controller,
+    ) -> io::Result<Option<ConnectionToProcess>> {
         let (socket, _) = self.tcp_listener.accept().await?;
         let process = ConnectionToProcess {
             stream: Framed::new(socket, Codec::new(1024)),
+            controller,
         };
         Ok(Some(process))
     }

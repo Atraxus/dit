@@ -20,7 +20,7 @@ pub async fn run_daemon(config: Config) -> Result<(), io::Error> {
     let listener = tokio::spawn(
         async move {
             loop {
-                let Some(inbound) = local_listener.accept().await? else {
+                let Some(inbound) = local_listener.accept(rt.controller.clone()).await? else {
                     return Ok::<(), io::Error>(());
                 };
 
@@ -35,11 +35,6 @@ pub async fn run_daemon(config: Config) -> Result<(), io::Error> {
             .run()
             .instrument(tracing::debug_span!("local peer")),
     );
-
-    // rt.controller
-    //     .bootstrap("127.0.0.1:6660".parse().unwrap())
-    //     .await
-    //     .unwrap();
 
     let (listener_result, local_peer_result) = tokio::join!(listener, local_peer);
 
@@ -61,6 +56,12 @@ pub enum Command {
     Daemon,
     /// Pings the daemon.
     PingDaemon,
+    /// Bootstrap the daemon.
+    Bootstrap {
+        /// The address of the peer to bootstrap the daemon to.
+        #[clap(short, long)]
+        address: String,
+    },
 }
 
 #[tracing::instrument(name = "run_cli", skip(args))]
@@ -113,6 +114,18 @@ pub async fn run(args: Args) {
                     eprintln!("An error occurred while receiving a packet: {}", e);
                 }
             }
+        }
+        Command::Bootstrap { address } => {
+            // Connect to the daemon (get socket from toml)
+            let mut connection = ConnectionToDaemon::connect(config.daemon_config.socket_addr)
+                .await
+                .unwrap();
+
+            // Send a message to the daemon
+            connection
+                .bootstrap(address.parse().unwrap())
+                .await
+                .unwrap();
         }
     }
 }
