@@ -14,23 +14,39 @@ use tracing::Instrument;
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 
 pub async fn run_daemon(config: GlobalConfig) -> Result<(), io::Error> {
-    let rt = Runtime::new(config.peer).await?;
+    let rt = Runtime::new(config.clone().peer).await?;
 
-    let tcp_listener = TcpListener::bind(config.daemon.socket_addr).await?;
+    let tcp_listener_local = TcpListener::bind(config.daemon.socket_addr).await?;
 
-    let mut local_listener = LocalListener { tcp_listener };
+    let mut local_listener = LocalListener {
+        tcp_listener: tcp_listener_local,
+    };
+    let remote_listener = rt.listener;
 
-    let listener = tokio::spawn(
+    let local_listener_task = tokio::spawn(
         async move {
             loop {
-                let Some(inbound) = local_listener.accept(rt.controller.clone()).await? else {
+                if let Some(inbound) = local_listener.accept(rt.controller.clone()).await? {
+                    tokio::spawn(inbound.run().in_current_span());
+                } else {
                     return Ok::<(), io::Error>(());
-                };
-
-                tokio::spawn(inbound.run().in_current_span());
+                }
             }
         }
-        .instrument(tracing::debug_span!("listener")),
+        .instrument(tracing::debug_span!("local listener")),
+    );
+
+    let remote_listener_task = tokio::spawn(
+        async move {
+            loop {
+                if let Some(remote_peer) = remote_listener.accept().await? {
+                    tokio::spawn(remote_peer.run().in_current_span());
+                } else {
+                    return Ok::<(), io::Error>(());
+                }
+            }
+        }
+        .instrument(tracing::debug_span!("remote listener")),
     );
 
     let local_peer = tokio::spawn(
@@ -39,9 +55,11 @@ pub async fn run_daemon(config: GlobalConfig) -> Result<(), io::Error> {
             .instrument(tracing::debug_span!("local peer")),
     );
 
-    let (listener_result, local_peer_result) = tokio::join!(listener, local_peer);
+    let (local_listener_result, remote_listener_result, local_peer_result) =
+        tokio::join!(local_listener_task, remote_listener_task, local_peer);
 
-    listener_result.unwrap().unwrap();
+    local_listener_result.unwrap().unwrap();
+    remote_listener_result.unwrap().unwrap();
     local_peer_result.unwrap();
 
     Ok(())
