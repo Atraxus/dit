@@ -7,6 +7,7 @@ use dit_core::config::GlobalConfig;
 use dit_core::daemon::{ConnectionToDaemon, LocalListener, Packet};
 use dit_core::peer::Runtime;
 use std::fs;
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use tokio::io;
 use tracing::Instrument;
@@ -83,8 +84,7 @@ pub enum Command {
     /// Bootstrap the daemon.
     Bootstrap {
         /// The address of the peer to bootstrap the daemon to.
-        #[clap(short, long)]
-        address: String,
+        address: SocketAddr,
     },
 }
 
@@ -149,15 +149,22 @@ pub async fn run(args: Args) {
             };
 
             // Connect to the daemon (get socket from toml)
-            let mut connection = ConnectionToDaemon::connect(config.daemon.socket_addr)
-                .await
-                .unwrap();
+            let mut connection = match ConnectionToDaemon::connect(config.daemon.socket_addr).await
+            {
+                Ok(ok) => ok,
+                Err(err) => {
+                    eprintln!("error: failed to connect to daemon: {err}");
+                    return;
+                }
+            };
 
             // Send a message to the daemon
-            connection
-                .bootstrap(address.parse().unwrap())
-                .await
-                .unwrap();
+            match connection.bootstrap(address).await {
+                Ok(()) => (),
+                Err(err) => {
+                    eprintln!("error: bootstrapping failed: {err}");
+                }
+            }
         }
     }
 }
