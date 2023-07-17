@@ -103,18 +103,24 @@ impl ConnectionToDaemon {
 /// The local listener listens for connections from processes.
 #[derive(Debug)]
 pub struct LocalListener {
-    pub tcp_listener: TcpListener,
+    tcp_listener: TcpListener,
+    controller: Controller,
 }
 
 impl LocalListener {
-    pub async fn accept(
-        &mut self,
-        controller: Controller,
-    ) -> io::Result<Option<ConnectionToProcess>> {
+    pub async fn new(config: &DaemonConfig, controller: Controller) -> io::Result<Self> {
+        let tcp_listener = TcpListener::bind(config.socket_addr).await?;
+        Ok(Self {
+            tcp_listener,
+            controller,
+        })
+    }
+
+    pub async fn accept(&mut self) -> io::Result<Option<ConnectionToProcess>> {
         let (socket, _) = self.tcp_listener.accept().await?;
         let process = ConnectionToProcess {
             stream: Framed::new(socket, Codec::new(1024)),
-            controller,
+            controller: self.controller.clone(),
         };
         Ok(Some(process))
     }

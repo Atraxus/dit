@@ -9,24 +9,19 @@ use dit_core::peer::Runtime;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tokio::io;
-use tokio::net::TcpListener;
 use tracing::Instrument;
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 
 pub async fn run_daemon(config: GlobalConfig) -> Result<(), io::Error> {
     let rt = Runtime::new(config.clone().peer).await?;
 
-    let tcp_listener_local = TcpListener::bind(config.daemon.socket_addr).await?;
-
-    let mut local_listener = LocalListener {
-        tcp_listener: tcp_listener_local,
-    };
+    let mut local_listener = LocalListener::new(&config.daemon, rt.controller).await?;
     let remote_listener = rt.listener;
 
     let local_listener_task = tokio::spawn(
         async move {
             loop {
-                if let Some(inbound) = local_listener.accept(rt.controller.clone()).await? {
+                if let Some(inbound) = local_listener.accept().await? {
                     tokio::spawn(inbound.run().in_current_span());
                 } else {
                     return Ok::<(), io::Error>(());
