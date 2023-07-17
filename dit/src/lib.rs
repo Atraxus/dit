@@ -5,7 +5,7 @@
 use clap::{Parser, Subcommand};
 use dit_core::config::GlobalConfig;
 use dit_core::daemon::{ConnectionToDaemon, LocalListener, Packet};
-use dit_core::peer::Runtime;
+use dit_core::peer::{DhtAddr, Runtime};
 use dit_core::store::Store;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -92,6 +92,17 @@ pub enum Command {
         #[arg(long)]
         filepath: PathBuf,
     },
+    /// Get file
+    Cat{
+        #[arg(long)]
+        filehash: DhtAddr,
+    },
+    /// Delete
+    Delete{
+        #[arg(long)]
+        filehash: DhtAddr,
+    },
+
     /// Announces all files in the store.
     Announce,
 }
@@ -160,8 +171,36 @@ pub async fn run(args: Args) {
             };
 
             let store = Store::open(config.store).unwrap();
-            let file = store.add_file(filepath).unwrap();
-            println!("Added file: {:?}", file);
+            let file = store.add_file(filepath);
+            match file {
+                Ok(file) => {println!("Added file: {:?}", file);}
+                Err(_) => {eprintln!("Error while adding file!");}
+            }
+        }
+        Command::Cat{ filehash } => {
+            let Ok(config) = read_config_or_report_error(&args.config) else {
+                return;
+            };
+
+            let store = Store::open(config.store).unwrap();
+            let file = store.open_file(filehash);
+            match file {
+                Ok(file) => {println!("Delivered file: {:?}", file);}
+                Err(_) => {eprintln!("Error while getting file!");}
+            }
+        }
+
+        Command::Delete{ filehash } => {
+            let Ok(config) = read_config_or_report_error(&args.config) else {
+                return;
+            };
+
+            let store = Store::open(config.store).unwrap();
+            let file = store.remove_file(filehash);
+            match file {
+                Ok(file) => {println!("Removed file: {:?}", file);}
+                Err(_) => {eprintln!("Error while removing file!");}
+            }
         }
         Command::Announce => {
             let Ok(config) = read_config_or_report_error(&args.config) else {
