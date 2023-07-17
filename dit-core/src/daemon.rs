@@ -4,7 +4,7 @@
 //! manage the remote peers that connect to the listener.
 
 use crate::codec::Codec;
-use crate::peer::PeerConfig;
+use crate::peer::{Controller, DhtAddr};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
@@ -12,13 +12,7 @@ use tokio::io;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::codec::Framed;
 
-#[derive(Debug)]
-pub struct Config {
-    pub peer_config: PeerConfig,
-    pub daemon_config: DaemonConfig,
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DaemonConfig {
     pub socket_addr: SocketAddr,
 }
@@ -27,12 +21,14 @@ pub struct DaemonConfig {
 pub enum Packet {
     Ping(u64),
     Pong(u64),
+    Announce(DhtAddr),
 }
 
 /// This struct represents the connection from the daemon to a process.
 #[derive(Debug)]
 pub struct ConnectionToProcess {
     stream: Framed<TcpStream, Codec<Packet>>,
+    controller: Controller,
 }
 
 impl ConnectionToProcess {
@@ -52,6 +48,11 @@ impl ConnectionToProcess {
                 }
                 Ok(Packet::Pong(_)) => {
                     tracing::warn!("Received unexpected Pong packet");
+                }
+                Ok(Packet::Announce(hash)) => {
+                    tracing::info!("Received Announce with hash: {}", hash);
+
+                    self.controller.announce(hash).await?;
                 }
                 Err(e) => {
                     tracing::error!("Failed to process packet: {}", e);
@@ -92,6 +93,11 @@ impl ConnectionToDaemon {
             None => Ok(None),
         }
     }
+
+    /// Send an announce packet to the daemon.
+    pub async fn announce(&mut self, hash: DhtAddr) -> tokio::io::Result<()> {
+        self.stream.send(Packet::Announce(hash)).await
+    }
 }
 
 /// The local listener listens for connections from processes.
@@ -101,10 +107,14 @@ pub struct LocalListener {
 }
 
 impl LocalListener {
-    pub async fn accept(&mut self) -> io::Result<Option<ConnectionToProcess>> {
+    pub async fn accept(
+        &mut self,
+        controller: Controller,
+    ) -> io::Result<Option<ConnectionToProcess>> {
         let (socket, _) = self.tcp_listener.accept().await?;
         let process = ConnectionToProcess {
             stream: Framed::new(socket, Codec::new(1024)),
+            controller,
         };
         Ok(Some(process))
     }

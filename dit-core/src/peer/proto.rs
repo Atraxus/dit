@@ -96,7 +96,7 @@ mod tests {
                 ttl: 456,
                 payload: Payload::NeighborsResponse(Neighbors {
                     pred: Some(DhtAndSocketAddr {
-                        dht_addr: DhtAddr::buffer_hash(&b"pred"[..]).unwrap(),
+                        dht_addr: DhtAddr::hash("pred"),
                         socket_addr: "[FEED::]:0".parse().unwrap(),
                     }),
                     succ: None,
