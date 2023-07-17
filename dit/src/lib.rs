@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand};
 use dit_core::config::GlobalConfig;
 use dit_core::daemon::{ConnectionToDaemon, LocalListener, Packet};
 use dit_core::peer::Runtime;
+use dit_core::store::Store;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tokio::io;
@@ -14,23 +15,39 @@ use tracing::Instrument;
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 
 pub async fn run_daemon(config: GlobalConfig) -> Result<(), io::Error> {
-    let rt = Runtime::new(config.peer).await?;
+    let rt = Runtime::new(config.clone().peer).await?;
 
-    let tcp_listener = TcpListener::bind(config.daemon.socket_addr).await?;
+    let tcp_listener_local = TcpListener::bind(config.daemon.socket_addr).await?;
 
-    let mut local_listener = LocalListener { tcp_listener };
+    let mut local_listener = LocalListener {
+        tcp_listener: tcp_listener_local,
+    };
+    let remote_listener = rt.listener;
 
-    let listener = tokio::spawn(
+    let local_listener_task = tokio::spawn(
         async move {
             loop {
-                let Some(inbound) = local_listener.accept().await? else {
+                if let Some(inbound) = local_listener.accept(rt.controller.clone()).await? {
+                    tokio::spawn(inbound.run().in_current_span());
+                } else {
                     return Ok::<(), io::Error>(());
-                };
-
-                tokio::spawn(inbound.run().in_current_span());
+                }
             }
         }
-        .instrument(tracing::debug_span!("listener")),
+        .instrument(tracing::debug_span!("local listener")),
+    );
+
+    let remote_listener_task = tokio::spawn(
+        async move {
+            loop {
+                if let Some(remote_peer) = remote_listener.accept().await? {
+                    tokio::spawn(remote_peer.run().in_current_span());
+                } else {
+                    return Ok::<(), io::Error>(());
+                }
+            }
+        }
+        .instrument(tracing::debug_span!("remote listener")),
     );
 
     let local_peer = tokio::spawn(
@@ -39,14 +56,11 @@ pub async fn run_daemon(config: GlobalConfig) -> Result<(), io::Error> {
             .instrument(tracing::debug_span!("local peer")),
     );
 
-    // rt.controller
-    //     .bootstrap("127.0.0.1:7700".parse().unwrap())
-    //     .await
-    //     .unwrap();
+    let (local_listener_result, remote_listener_result, local_peer_result) =
+        tokio::join!(local_listener_task, remote_listener_task, local_peer);
 
-    let (listener_result, local_peer_result) = tokio::join!(listener, local_peer);
-
-    listener_result.unwrap().unwrap();
+    local_listener_result.unwrap().unwrap();
+    remote_listener_result.unwrap().unwrap();
     local_peer_result.unwrap();
 
     Ok(())
@@ -72,6 +86,14 @@ pub enum Command {
     Daemon,
     /// Pings the daemon.
     PingDaemon,
+    /// Adds file to store
+    Add {
+        /// Path to file to add
+        #[arg(long)]
+        filepath: PathBuf,
+    },
+    /// Announces all files in the store.
+    Announce,
 }
 
 #[tracing::instrument(name = "run_cli", skip(args))]
@@ -129,6 +151,36 @@ pub async fn run(args: Args) {
                 }
                 Err(e) => {
                     eprintln!("An error occurred while receiving a packet: {}", e);
+                }
+            }
+        }
+        Command::Add { filepath } => {
+            let Ok(config) = read_config_or_report_error(&args.config) else {
+                return;
+            };
+
+            let store = Store::open(config.store).unwrap();
+            let file = store.add_file(filepath).unwrap();
+            println!("Added file: {:?}", file);
+        }
+        Command::Announce => {
+            let Ok(config) = read_config_or_report_error(&args.config) else {
+                return;
+            };
+
+            // Connect to the daemon (get socket from toml)
+            let mut connection = ConnectionToDaemon::connect(config.daemon.socket_addr)
+                .await
+                .unwrap();
+
+            let store = Store::open(config.store).unwrap();
+            let files = store.files().unwrap();
+
+            if files.is_empty() {
+                tracing::info!("No files to announce");
+            } else {
+                for file in files {
+                    connection.announce(file).await.unwrap();
                 }
             }
         }

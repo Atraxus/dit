@@ -49,6 +49,23 @@ impl Store {
         dst_path.push(hash.to_string());
         dst_path
     }
+
+    /// Returns a list of all files (hashes) in the store.
+    pub fn files(&self) -> io::Result<Vec<DhtAddr>> {
+        let mut hashes = vec![];
+
+        for entry in fs::read_dir(self.config.dir.join("blobs"))? {
+            let entry = entry?;
+            if entry.file_type()?.is_file() {
+                let filename = entry.file_name();
+                let filename = filename.to_string_lossy();
+                let hash = filename.parse().unwrap();
+                hashes.push(hash);
+            }
+        }
+
+        Ok(hashes)
+    }
 }
 
 #[cfg(test)]
