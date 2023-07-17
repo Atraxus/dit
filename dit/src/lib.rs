@@ -132,14 +132,11 @@ pub async fn run(args: Args) {
 
             // If you want to receive a packet (for example a pong) after sending ping
             match connection.receive().await {
-                Ok(Some(Packet::Pong(value))) => {
+                Ok(Packet::Pong(value)) => {
                     println!("Received Pong with value: {}", value);
                 }
-                Ok(Some(_)) => {
+                Ok(_) => {
                     println!("Received unexpected packet");
-                }
-                Ok(None) => {
-                    println!("No more packets to receive, connection was closed");
                 }
                 Err(e) => {
                     eprintln!("An error occurred while receiving a packet: {}", e);
