@@ -123,8 +123,11 @@ impl LocalListener {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::GlobalConfig;
+    use crate::peer::Runtime;
     use bytes::BytesMut;
     use tokio_util::codec::{Decoder, Encoder};
+    use tracing::Instrument;
 
     #[tokio::test]
     async fn encode_decode_multiple_roundtrip() {
@@ -158,5 +161,57 @@ mod tests {
         codec.encode(test_packet.clone(), &mut buffer).unwrap();
         let received = codec.decode(&mut buffer).unwrap().unwrap();
         assert_eq!(received, test_packet);
+    }
+
+    #[tokio::test]
+    async fn bootstrap() -> Result<(), io::Error> {
+        let temp_dir_a = tempfile::tempdir().unwrap();
+        let config_path_a = temp_dir_a.path().join("dit-config.toml");
+        GlobalConfig::init(&config_path_a, /* overwrite = */ false).unwrap();
+        let mut config_a = GlobalConfig::read(&config_path_a).unwrap();
+
+        let temp_dir_b = tempfile::tempdir().unwrap();
+        let config_path_b = temp_dir_b.path().join("dit-config.toml");
+        GlobalConfig::init(&config_path_b, /* overwrite = */ false).unwrap();
+        let mut config_b = GlobalConfig::read(&config_path_b).unwrap();
+
+        config_a.peer.addrs.socket_addr = "127.0.0.1:7700".parse().unwrap();
+        config_a.daemon.socket_addr = "127.0.0.1:7701".parse().unwrap();
+        config_b.peer.addrs.socket_addr = "127.0.0.2:7700".parse().unwrap();
+        config_b.daemon.socket_addr = "127.0.0.2:7701".parse().unwrap();
+
+        let rt_a = Runtime::new(config_a.peer).await.unwrap();
+
+        // Simulate running daemon for peer a
+        let tcp_listener_a = TcpListener::bind(config_a.daemon.socket_addr).await?;
+
+        let mut local_listener_a = LocalListener {
+            tcp_listener: tcp_listener_a,
+        };
+
+        let listener_a = tokio::spawn(
+            async move {
+                if let Some(inbound) = local_listener_a.accept(rt_a.controller.clone()).await? {
+                    tokio::spawn(inbound.run().in_current_span());
+                }
+
+                Ok::<(), io::Error>(())
+            }
+            .instrument(tracing::debug_span!("listener")),
+        );
+
+        // Create connection to peer a daemon from peer b
+        let mut conn_to_daemon_a = ConnectionToDaemon::connect(config_a.daemon.socket_addr).await?;
+
+        // Send bootstrap packet from peer b to peer a
+        conn_to_daemon_a
+            .bootstrap(config_b.peer.addrs.socket_addr)
+            .await?;
+
+        // Check the listener_a result to make sure it didn't fail
+        let listener_result = listener_a.await.unwrap();
+
+        assert!(listener_result.is_ok());
+        Ok(())
     }
 }
